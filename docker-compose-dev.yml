@@ -1,0 +1,18 @@
+services:
+  samsung-tvplus:
+    container_name: samsung-tvplus
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - REGIONS=at,ca,gb,us
+      - TZ=Europe/London
+    ports:
+      - 21012:80
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.19.1.0/24
