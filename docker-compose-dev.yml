@@ -5,14 +5,12 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - REGIONS=at,ca,gb,us
+      - REGIONS=ca,gb,us
       - TZ=Europe/London
     ports:
-      - 21012:80
+      - 29001:80
     restart: unless-stopped
 
 networks:
   default:
-    ipam:
-      config:
-        - subnet: 172.19.1.0/24
+    name: samsung-tvplus-develop
