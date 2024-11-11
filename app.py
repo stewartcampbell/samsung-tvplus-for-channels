@@ -7,6 +7,193 @@ import requests
 import gzip
 from io import BytesIO
 
+
+def debug_get(*args, **kwargs):
+    import requests
+    import socket
+    import ssl
+    import subprocess
+    import time
+
+    print("\n=== REQUEST STARTED ===")
+    print(f"TIME: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # Capture timeout settings
+    connect_timeout = kwargs.get('timeout', 5)
+    if isinstance(connect_timeout, tuple):
+        print(f"CONNECT TIMEOUT: {connect_timeout[0]}s")
+        print(f"READ TIMEOUT: {connect_timeout[1]}s")
+    else:
+        print(f"TIMEOUT (both connect and read): {connect_timeout}s")
+
+    print("\n-- REQUEST DETAILS --")
+    print(f"URL: {args[0]}")
+    print(f"METHOD: {kwargs.get('method', 'GET')}")
+    url_parts = requests.utils.urlparse(args[0])
+    print(f"SCHEME: {url_parts.scheme}")
+    print(f"HOST: {url_parts.netloc}")
+    print(f"PATH: {url_parts.path}")
+    print(f"QUERY: {url_parts.query}")
+    print(f"REQUEST HEADERS: {kwargs.get('headers', {})}")
+
+    # DNS Resolution check
+    try:
+        print("\n-- DNS INFO --")
+        start_dns = time.time()
+        ip = socket.gethostbyname(url_parts.netloc)
+        dns_time = time.time() - start_dns
+        print(f"RESOLVED IP: {ip}")
+        print(f"DNS RESOLUTION TIME: {dns_time:.3f}s")
+    except socket.gaierror as e:
+        print(f"DNS RESOLUTION FAILED: {str(e)}")
+
+    start = time.time()
+    try:
+        # Create a session to get more control
+        session = requests.Session()
+
+        # Set up event hooks to track timing
+        timing = {}
+
+        def time_hook(r, *args, **kwargs):
+            timing['connection_time'] = time.time() - start
+            return r
+
+        session.hooks['response'] = [time_hook]
+
+        # Make the request
+        response = session.get(
+            args[0],
+            timeout=kwargs.get('timeout', 5),
+            **{k:v for k,v in kwargs.items() if k != 'timeout'}
+        )
+
+        print("\n-- CONNECTION SUCCESS --")
+        print(f"INITIAL CONNECTION TIME: {timing.get('connection_time', 'N/A')}s")
+        print(f"TOTAL TIME: {time.time() - start:.3f}s")
+        print(f"ELAPSED TIME: {response.elapsed.total_seconds()}s")
+
+        print(f"STATUS CODE: {response.status_code}")
+        print(f"RESPONSE HEADERS: {dict(response.headers)}")
+        print(f"RESPONSE SIZE: {len(response.content)} bytes")
+
+        return response
+
+    except requests.exceptions.SSLError as e:
+        print("\n-- SSL ERROR --")
+        print(f"ERROR TYPE: SSLError")
+        print(f"FAILED AFTER: {time.time() - start:.3f}s")
+        print(f"ERROR MESSAGE: {str(e)}")
+        print(f"HOST: {url_parts.netloc}")
+        if 'ip' in locals():
+            print(f"RESOLVED IP: {ip}")
+            print(f"DNS TIME: {dns_time}s")
+        # Try getting SSL certificate info
+        try:
+            cert_info = ssl.get_server_certificate((url_parts.netloc, 443))
+            print(f"\nCERTIFICATE INFO:\n{cert_info}")
+        except:
+            print("Failed to retrieve certificate info")
+        raise
+
+    except requests.exceptions.TooManyRedirects as e:
+        print("\n-- TOO MANY REDIRECTS ERROR --")
+        print(f"ERROR TYPE: TooManyRedirects")
+        print(f"FAILED AFTER: {time.time() - start:.3f}s")
+        print(f"ERROR MESSAGE: {str(e)}")
+        if hasattr(e, 'response'):
+            print(f"LAST REDIRECT URL: {e.response.url}")
+            print(f"REDIRECT HISTORY:")
+            for resp in e.response.history:
+                print(f"  {resp.url} -> {resp.status_code}")
+        raise
+
+    except requests.exceptions.ConnectTimeout as e:
+        print("\n-- CONNECTION TIMEOUT ERROR --")
+        print(f"ERROR TYPE: ConnectTimeout")
+        print(f"FAILED AFTER: {time.time() - start:.3f}s")
+        print(f"ERROR MESSAGE: {str(e)}")
+        print(f"UNABLE TO CONNECT TO: {url_parts.netloc}")
+        print(f"RESOLVED IP: {ip if 'ip' in locals() else 'DNS resolution failed'}")
+        print(f"DNS TIME: {dns_time if 'dns_time' in locals() else 'N/A'}s")
+        print(f"TIMEOUT SETTING: {connect_timeout}s")
+
+        # Try a quick ping to check basic connectivity
+        try:
+            ping = subprocess.run(['ping', '-c', '1', '-W', '2', url_parts.netloc],
+                                capture_output=True, text=True)
+            print("\n-- PING TEST --")
+            print(f"PING RESPONSE:\n{ping.stdout}")
+        except:
+            print("PING TEST: Failed to execute")
+
+        raise
+
+    except requests.exceptions.ReadTimeout as e:
+        print("\n-- READ TIMEOUT ERROR --")
+        print(f"ERROR TYPE: ReadTimeout")
+        print(f"FAILED AFTER: {time.time() - start:.3f}s")
+        print(f"ERROR MESSAGE: {str(e)}")
+        print(f"PARTIAL CONNECTION TIME: {timing.get('connection_time', 'N/A')}s")
+        print(f"TIMEOUT SETTING: {connect_timeout}s")
+        if 'response' in locals():
+            print(f"PARTIAL RESPONSE CODE: {getattr(response, 'status_code', 'N/A')}")
+            print(f"PARTIAL HEADERS: {dict(getattr(response, 'headers', {}))}")
+            print(f"PARTIAL CONTENT LENGTH: {len(getattr(response, 'content', b''))} bytes")
+        raise
+
+    except requests.exceptions.ConnectionError as e:
+        print("\n-- CONNECTION ERROR --")
+        print(f"ERROR TYPE: ConnectionError")
+        print(f"FAILED AFTER: {time.time() - start:.3f}s")
+        print(f"ERROR MESSAGE: {str(e)}")
+        print(f"RESOLVED IP: {ip if 'ip' in locals() else 'DNS resolution failed'}")
+        print(f"DNS TIME: {dns_time if 'dns_time' in locals() else 'N/A'}s")
+
+        # Try traceroute to see where connection fails
+        try:
+            traceroute = subprocess.run(['traceroute', url_parts.netloc],
+                                      capture_output=True, text=True, timeout=10)
+            print("\n-- TRACEROUTE --")
+            print(f"ROUTE:\n{traceroute.stdout}")
+        except:
+            print("TRACEROUTE: Failed to execute")
+
+        raise
+
+    except requests.exceptions.HTTPError as e:
+        print("\n-- HTTP ERROR --")
+        print(f"ERROR TYPE: HTTPError")
+        print(f"FAILED AFTER: {time.time() - start:.3f}s")
+        print(f"ERROR MESSAGE: {str(e)}")
+        if hasattr(e, 'response'):
+            print(f"STATUS CODE: {e.response.status_code}")
+            print(f"RESPONSE HEADERS: {dict(e.response.headers)}")
+            print(f"RESPONSE CONTENT: {e.response.content[:500]}...")  # First 500 bytes
+            print(f"REQUEST URL: {e.response.url}")
+            print(f"REQUEST METHOD: {e.response.request.method}")
+            print(f"REQUEST HEADERS: {dict(e.response.request.headers)}")
+        raise
+
+    except Exception as e:
+        print("\n-- UNEXPECTED ERROR --")
+        print(f"ERROR TYPE: {type(e).__name__}")
+        print(f"ERROR MESSAGE: {str(e)}")
+        print(f"FAILED AFTER: {time.time() - start:.3f}s")
+        if 'ip' in locals():
+            print(f"RESOLVED IP: {ip}")
+            print(f"DNS TIME: {dns_time}s")
+        if 'timing' in locals():
+            print(f"PARTIAL CONNECTION TIME: {timing.get('connection_time', 'N/A')}s")
+        raise
+
+    finally:
+        print("\n=== REQUEST ENDED ===\n")
+
+if os.getenv('DEBUG'):
+    original_get = requests.get
+    requests.get = debug_get
+
 PORT = 80
 REGION_ALL = 'all'
 
